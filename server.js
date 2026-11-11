@@ -1,3 +1,4 @@
+
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -5,7 +6,7 @@ require('dotenv').config();
 
 const app = express();
 
-// CORS configuration supporting GitHub Pages frontend and local dev
+// CORS configuration
 const allowedOrigins = [
   'https://srinuannapureddy.github.io',
   'http://localhost:5173',
@@ -14,7 +15,11 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
-    if (!origin || allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.github.io')) {
+    if (
+      !origin ||
+      allowedOrigins.includes(origin) ||
+      origin.endsWith('.github.io')
+    ) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
@@ -25,20 +30,29 @@ app.use(cors({
 
 app.use(express.json());
 
-// Database Connection
-mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/sowji_collections')
-  .then(() => console.log('MongoDB Connected successfully to Sowji Collections DB'))
-  .catch((err) => console.error('MongoDB connection error:', err));
+// MongoDB connection
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => {
+    console.log('MongoDB Connected successfully to Sowji Collections DB');
+  })
+  .catch((err) => {
+    console.error('MongoDB connection error:', err.message);
+  });
 
-// API Routes
-app.use('/api/products', require('./routes/productRoutes'));
-app.use('/api/categories', require('./routes/categoryRoutes'));
-app.use('/api/auth', require('./routes/authRoutes'));
-app.use('/api/orders', require('./routes/orderRoutes'));
+// API Routes — files are in the root folder
+app.use('/api/products', require('./productRoutes'));
+app.use('/api/categories', require('./categoryRoutes'));
+app.use('/api/auth', require('./authRoutes'));
+app.use('/api/orders', require('./orderRoutes'));
 
 app.get('/', (req, res) => {
-  res.json({ status: 'Sowji Collections Backend API is running successfully' });
+  res.json({
+    status: 'Sowji Collections Backend API is running successfully'
+  });
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
