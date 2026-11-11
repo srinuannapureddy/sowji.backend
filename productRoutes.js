@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const Product = require('../models/Product');
+const Product = require('./Product');
 
 // Get all products with filters, search, and pagination
 router.get('/', async (req, res) => {
