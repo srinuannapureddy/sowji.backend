@@ -4,9 +4,9 @@ const router = express.Router();
 const Product = require('./Product');
 
 // --------------------------------------------------
-// ADMIN PROTECTION
-// Set ADMIN_API_KEY in Render environment variables.
-// Never put this key in frontend JavaScript.
+// ADMIN AUTHENTICATION
+// ADMIN_API_KEY must be set in Render environment.
+// Never expose this key in frontend JavaScript.
 // --------------------------------------------------
 
 function adminAuth(req, res, next) {
@@ -30,14 +30,14 @@ function adminAuth(req, res, next) {
   next();
 }
 
-// Escape search/filter text before using it in regular expressions.
 function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // --------------------------------------------------
-// GET ALL PRODUCTS
-// GET /api/products?limit=40
+// PUBLIC PRODUCT LIST
+// GET /api/products
+// Only verified and published products are visible.
 // --------------------------------------------------
 
 router.get('/', async (req, res) => {
@@ -58,7 +58,10 @@ router.get('/', async (req, res) => {
       Math.max(1, parseInt(req.query.limit, 10) || 40)
     );
 
-    const query = {};
+    const query = {
+      isVerified: true,
+      isPublished: true
+    };
 
     if (category) {
       query.category = new RegExp(escapeRegex(category), 'i');
@@ -85,27 +88,31 @@ router.get('/', async (req, res) => {
     }
 
     if (minPrice !== undefined || maxPrice !== undefined) {
-      query.price = {};
+      query.price = { $ne: null };
 
       if (minPrice !== undefined) {
         const min = Number(minPrice);
+
         if (!Number.isFinite(min) || min < 0) {
           return res.status(400).json({
             success: false,
             message: 'Invalid minimum price'
           });
         }
+
         query.price.$gte = min;
       }
 
       if (maxPrice !== undefined) {
         const max = Number(maxPrice);
+
         if (!Number.isFinite(max) || max < 0) {
           return res.status(400).json({
             success: false,
             message: 'Invalid maximum price'
           });
         }
+
         query.price.$lte = max;
       }
     }
@@ -130,7 +137,7 @@ router.get('/', async (req, res) => {
       Product.countDocuments(query)
     ]);
 
-    res.status(200).json({
+    res.json({
       success: true,
       items,
       total,
@@ -149,9 +156,8 @@ router.get('/', async (req, res) => {
 });
 
 // --------------------------------------------------
-// BULK ADD PRODUCTS
+// ADMIN BULK ADD
 // POST /api/products/bulk
-// Requires x-admin-key header
 // --------------------------------------------------
 
 router.post('/bulk', adminAuth, async (req, res) => {
@@ -172,13 +178,21 @@ router.post('/bulk', adminAuth, async (req, res) => {
       });
     }
 
-    const result = await Product.insertMany(products, {
+    // Bulk-added products remain unpublished by default.
+    const safeProducts = products.map((product) => ({
+      ...product,
+      isVerified: false,
+      isPublished: false,
+      verifiedAt: null
+    }));
+
+    const result = await Product.insertMany(safeProducts, {
       ordered: false
     });
 
     res.status(201).json({
       success: true,
-      message: 'Products added successfully',
+      message: 'Products added as unpublished drafts',
       count: result.length,
       items: result
     });
@@ -194,13 +208,16 @@ router.post('/bulk', adminAuth, async (req, res) => {
 });
 
 // --------------------------------------------------
-// GET SINGLE PRODUCT BY SLUG
+// PUBLIC SINGLE PRODUCT
+// GET /api/products/:slug
 // --------------------------------------------------
 
 router.get('/:slug', async (req, res) => {
   try {
     const product = await Product.findOne({
-      slug: req.params.slug
+      slug: req.params.slug,
+      isVerified: true,
+      isPublished: true
     }).lean();
 
     if (!product) {
@@ -226,23 +243,31 @@ router.get('/:slug', async (req, res) => {
 });
 
 // --------------------------------------------------
-// ADD ONE PRODUCT
+// ADMIN ADD PRODUCT
 // POST /api/products
-// Requires x-admin-key header
 // --------------------------------------------------
 
 router.post('/', adminAuth, async (req, res) => {
   try {
-    const product = new Product(req.body);
+    const productData = {
+      ...req.body,
+      isVerified: false,
+      isPublished: false,
+      verifiedAt: null
+    };
+
+    const product = new Product(productData);
     const savedProduct = await product.save();
 
     res.status(201).json({
       success: true,
-      message: 'Product added successfully',
+      message: 'Product saved as an unpublished draft',
       product: savedProduct
     });
 
   } catch (error) {
+    console.error('Add product error:', error);
+
     res.status(400).json({
       success: false,
       message: error.message
@@ -251,28 +276,54 @@ router.post('/', adminAuth, async (req, res) => {
 });
 
 // --------------------------------------------------
-// UPDATE PRODUCT
+// ADMIN UPDATE / VERIFY / PUBLISH
 // PUT /api/products/:id
-// Requires x-admin-key header
 // --------------------------------------------------
 
 router.put('/:id', adminAuth, async (req, res) => {
   try {
-    const updatedProduct = await Product.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      {
-        new: true,
-        runValidators: true
-      }
-    );
+    const product = await Product.findById(req.params.id);
 
-    if (!updatedProduct) {
+    if (!product) {
       return res.status(404).json({
         success: false,
         message: 'Product not found'
       });
     }
+
+    // Apply admin changes.
+    Object.assign(product, req.body);
+
+    // A product cannot be published unless it is verified
+    // and has at least one photograph.
+    if (product.isPublished === true) {
+      const hasImage =
+        Array.isArray(product.images) &&
+        product.images.some(
+          (image) =>
+            image &&
+            typeof image.url === 'string' &&
+            image.url.trim() !== ''
+        );
+
+      if (product.isVerified !== true || !hasImage) {
+        return res.status(400).json({
+          success: false,
+          message: 'Verify the product and add an authentic product photograph before publishing'
+        });
+      }
+    }
+
+    if (product.isVerified === true) {
+      if (!product.verifiedAt) {
+        product.verifiedAt = new Date();
+      }
+    } else {
+      product.verifiedAt = null;
+      product.isPublished = false;
+    }
+
+    const updatedProduct = await product.save();
 
     res.json({
       success: true,
@@ -281,6 +332,8 @@ router.put('/:id', adminAuth, async (req, res) => {
     });
 
   } catch (error) {
+    console.error('Update product error:', error);
+
     res.status(400).json({
       success: false,
       message: error.message
@@ -289,9 +342,8 @@ router.put('/:id', adminAuth, async (req, res) => {
 });
 
 // --------------------------------------------------
-// DELETE PRODUCT
+// ADMIN DELETE
 // DELETE /api/products/:id
-// Requires x-admin-key header
 // --------------------------------------------------
 
 router.delete('/:id', adminAuth, async (req, res) => {
@@ -313,6 +365,8 @@ router.delete('/:id', adminAuth, async (req, res) => {
     });
 
   } catch (error) {
+    console.error('Delete product error:', error);
+
     res.status(400).json({
       success: false,
       message: error.message
