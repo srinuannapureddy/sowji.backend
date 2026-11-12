@@ -7,6 +7,7 @@ const instagramUrlValidator = {
 
     try {
       const url = new URL(value);
+
       return (
         url.protocol === 'https:' &&
         ['instagram.com', 'www.instagram.com'].includes(url.hostname)
@@ -40,7 +41,6 @@ const productSchema = new mongoose.Schema(
       trim: true
     },
 
-    // Null means the shop has not confirmed the price.
     price: {
       type: Number,
       default: null,
@@ -86,7 +86,51 @@ const productSchema = new mongoose.Schema(
       }
     ],
 
-    // Products remain hidden until explicitly verified and published.
+    // Multiple available colours for a saree.
+    colors: {
+      type: [{
+        type: String,
+        trim: true
+      }],
+      default: []
+    },
+
+    // Optional detailed colour variants.
+    colorVariants: [
+      {
+        name: {
+          type: String,
+          trim: true
+        },
+        color: {
+          type: String,
+          trim: true
+        },
+        stock: {
+          type: Number,
+          default: null,
+          min: 0
+        },
+        sku: {
+          type: String,
+          trim: true
+        }
+      }
+    ],
+
+    // Existing single colour field retained for compatibility.
+    color: {
+      type: String,
+      default: '',
+      trim: true
+    },
+
+    fabric: {
+      type: String,
+      default: '',
+      trim: true
+    },
+
     isVerified: {
       type: Boolean,
       default: false
@@ -124,16 +168,6 @@ const productSchema = new mongoose.Schema(
     isNewArrival: {
       type: Boolean,
       default: false
-    },
-
-    fabric: {
-      type: String,
-      default: ''
-    },
-
-    color: {
-      type: String,
-      default: ''
     }
   },
   {
@@ -141,6 +175,13 @@ const productSchema = new mongoose.Schema(
   }
 );
 
-productSchema.index({ isVerified: 1, isPublished: 1 });
+productSchema.index({
+  isVerified: 1,
+  isPublished: 1
+});
+
+productSchema.index({
+  colors: 1
+});
 
 module.exports = mongoose.model('Product', productSchema);
