@@ -3,12 +3,6 @@ const express = require('express');
 const router = express.Router();
 const Product = require('./Product');
 
-// --------------------------------------------------
-// ADMIN AUTHENTICATION
-// ADMIN_API_KEY must be set in Render environment.
-// Never expose this key in frontend JavaScript.
-// --------------------------------------------------
-
 function adminAuth(req, res, next) {
   const adminKey = process.env.ADMIN_API_KEY;
   const suppliedKey = req.headers['x-admin-key'];
@@ -34,12 +28,7 @@ function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// --------------------------------------------------
-// PUBLIC PRODUCT LIST
-// GET /api/products
-// Only verified and published products are visible.
-// --------------------------------------------------
-
+// PUBLIC: GET /api/products
 router.get('/', async (req, res) => {
   try {
     const {
@@ -48,15 +37,13 @@ router.get('/', async (req, res) => {
       newArrival,
       sort,
       q,
+      color,
       minPrice,
       maxPrice
     } = req.query;
 
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(
-      100,
-      Math.max(1, parseInt(req.query.limit, 10) || 40)
-    );
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 40));
 
     const query = {
       isVerified: true,
@@ -75,16 +62,36 @@ router.get('/', async (req, res) => {
       query.isNewArrival = true;
     }
 
+    if (color) {
+      const colorSearch = new RegExp(escapeRegex(color), 'i');
+
+      query.$and = query.$and || [];
+      query.$and.push({
+        $or: [
+          { color: colorSearch },
+          { colors: colorSearch },
+          { 'colorVariants.name': colorSearch },
+          { 'colorVariants.color': colorSearch }
+        ]
+      });
+    }
+
     if (q) {
       const search = new RegExp(escapeRegex(q), 'i');
 
-      query.$or = [
-        { name: search },
-        { description: search },
-        { fabric: search },
-        { color: search },
-        { category: search }
-      ];
+      query.$and = query.$and || [];
+      query.$and.push({
+        $or: [
+          { name: search },
+          { description: search },
+          { fabric: search },
+          { color: search },
+          { colors: search },
+          { 'colorVariants.name': search },
+          { 'colorVariants.color': search },
+          { category: search }
+        ]
+      });
     }
 
     if (minPrice !== undefined || maxPrice !== undefined) {
@@ -155,11 +162,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// --------------------------------------------------
-// ADMIN BULK ADD
-// POST /api/products/bulk
-// --------------------------------------------------
-
+// ADMIN: POST /api/products/bulk
 router.post('/bulk', adminAuth, async (req, res) => {
   try {
     const products = req.body.products;
@@ -178,8 +181,7 @@ router.post('/bulk', adminAuth, async (req, res) => {
       });
     }
 
-    // Bulk-added products remain unpublished by default.
-    const safeProducts = products.map((product) => ({
+    const safeProducts = products.map(product => ({
       ...product,
       isVerified: false,
       isPublished: false,
@@ -207,11 +209,7 @@ router.post('/bulk', adminAuth, async (req, res) => {
   }
 });
 
-// --------------------------------------------------
-// PUBLIC SINGLE PRODUCT
-// GET /api/products/:slug
-// --------------------------------------------------
-
+// PUBLIC: GET /api/products/:slug
 router.get('/:slug', async (req, res) => {
   try {
     const product = await Product.findOne({
@@ -242,11 +240,7 @@ router.get('/:slug', async (req, res) => {
   }
 });
 
-// --------------------------------------------------
-// ADMIN ADD PRODUCT
-// POST /api/products
-// --------------------------------------------------
-
+// ADMIN: POST /api/products
 router.post('/', adminAuth, async (req, res) => {
   try {
     const productData = {
@@ -275,11 +269,7 @@ router.post('/', adminAuth, async (req, res) => {
   }
 });
 
-// --------------------------------------------------
-// ADMIN UPDATE / VERIFY / PUBLISH
-// PUT /api/products/:id
-// --------------------------------------------------
-
+// ADMIN: PUT /api/products/:id
 router.put('/:id', adminAuth, async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
@@ -291,19 +281,15 @@ router.put('/:id', adminAuth, async (req, res) => {
       });
     }
 
-    // Apply admin changes.
     Object.assign(product, req.body);
 
-    // A product cannot be published unless it is verified
-    // and has at least one photograph.
     if (product.isPublished === true) {
       const hasImage =
         Array.isArray(product.images) &&
-        product.images.some(
-          (image) =>
-            image &&
-            typeof image.url === 'string' &&
-            image.url.trim() !== ''
+        product.images.some(image =>
+          image &&
+          typeof image.url === 'string' &&
+          image.url.trim() !== ''
         );
 
       if (product.isVerified !== true || !hasImage) {
@@ -341,16 +327,10 @@ router.put('/:id', adminAuth, async (req, res) => {
   }
 });
 
-// --------------------------------------------------
-// ADMIN DELETE
-// DELETE /api/products/:id
-// --------------------------------------------------
-
+// ADMIN: DELETE /api/products/:id
 router.delete('/:id', adminAuth, async (req, res) => {
   try {
-    const deletedProduct = await Product.findByIdAndDelete(
-      req.params.id
-    );
+    const deletedProduct = await Product.findByIdAndDelete(req.params.id);
 
     if (!deletedProduct) {
       return res.status(404).json({
