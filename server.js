@@ -43,10 +43,13 @@ app.use(cors({
     'OPTIONS'
   ],
 
+  
   allowedHeaders: [
     'Content-Type',
-    'Authorization'
+    'Authorization',
+    'x-admin-bootstrap-key'
   ]
+
 }));
 
 // HEALTH CHECK
