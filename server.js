@@ -45,6 +45,7 @@ app.use('/api/auth', require('./authRoutes'));
 app.use('/api/orders', require('./orderRoutes'));
 app.use('/api/reviews', require('./reviewRoutes'));
 app.use('/api/uploads', require('./uploadRoutes'));
+app.use('/api/customer-data', require('./customerDataRoutes'));
 
 // Health check
 app.get('/', (req, res) => {
