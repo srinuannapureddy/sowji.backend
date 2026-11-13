@@ -7,10 +7,11 @@ require('dotenv').config();
 const app = express();
 
 app.disable('x-powered-by');
+
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// CORS
+// FRONTEND SECURITY
 const allowedOrigins = [
   'https://sowji-collections.vercel.app',
   'https://srinuannapureddy.github.io',
@@ -30,17 +31,32 @@ app.use(cors({
 
     return callback(new Error('CORS: Origin not allowed'));
   },
+
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-key']
+
+  methods: [
+    'GET',
+    'POST',
+    'PUT',
+    'PATCH',
+    'DELETE',
+    'OPTIONS'
+  ],
+
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization'
+  ]
 }));
 
-// Health checks
+// HEALTH CHECK
 app.get('/', (req, res) => {
   res.json({
     success: true,
     message: 'Sowji Collections Backend API is running',
-    database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'
+    database: mongoose.connection.readyState === 1
+      ? 'Connected'
+      : 'Disconnected'
   });
 });
 
@@ -48,18 +64,20 @@ app.get('/api/health', (req, res) => {
   res.json({
     success: true,
     server: 'running',
-    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
+    database: mongoose.connection.readyState === 1
+      ? 'connected'
+      : 'disconnected'
   });
 });
 
-// API routes
+// API ROUTES
 app.use('/api/products', require('./productRoutes'));
 app.use('/api/categories', require('./categoryRoutes'));
 app.use('/api/auth', require('./authRoutes'));
 app.use('/api/orders', require('./orderRoutes'));
 app.use('/api/reviews', require('./reviewRoutes'));
 
-// MongoDB and one-time sample product seeding
+// DATABASE CONNECTION AND OPTIONAL SAMPLE SEED
 async function startServer() {
   try {
     if (!process.env.MONGO_URI) {
@@ -67,6 +85,7 @@ async function startServer() {
     }
 
     await mongoose.connect(process.env.MONGO_URI);
+
     console.log('MongoDB Connected successfully to Sowji Collections DB');
 
     if (process.env.SEED_SAMPLE_PRODUCTS === 'true') {
@@ -79,7 +98,9 @@ async function startServer() {
         sku: { $in: skus }
       }).select('sku').lean();
 
-      const existingSkus = new Set(existing.map(product => product.sku));
+      const existingSkus = new Set(
+        existing.map(product => product.sku)
+      );
 
       const missingProducts = sampleProducts.filter(
         product => !existingSkus.has(product.sku)
@@ -98,7 +119,7 @@ async function startServer() {
   }
 }
 
-// Error handling
+// UNKNOWN ROUTES
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -107,6 +128,7 @@ app.use((req, res) => {
   });
 });
 
+// ERROR HANDLING
 app.use((error, req, res, next) => {
   console.error('Server error:', error.message);
 
@@ -123,6 +145,7 @@ app.use((error, req, res, next) => {
   });
 });
 
+// START SERVER
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
