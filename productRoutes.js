@@ -1,28 +1,9 @@
 
 const express = require('express');
 const router = express.Router();
+
 const Product = require('./Product');
-
-function adminAuth(req, res, next) {
-  const adminKey = process.env.ADMIN_API_KEY;
-  const suppliedKey = req.headers['x-admin-key'];
-
-  if (!adminKey) {
-    return res.status(503).json({
-      success: false,
-      message: 'Admin API is not configured'
-    });
-  }
-
-  if (!suppliedKey || suppliedKey !== adminKey) {
-    return res.status(401).json({
-      success: false,
-      message: 'Unauthorized admin request'
-    });
-  }
-
-  next();
-}
+const adminAuth = require('./adminAuth');
 
 function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -54,18 +35,13 @@ router.get('/', async (req, res) => {
       query.category = new RegExp(escapeRegex(category), 'i');
     }
 
-    if (bestSeller === 'true') {
-      query.isBestSeller = true;
-    }
-
-    if (newArrival === 'true') {
-      query.isNewArrival = true;
-    }
+    if (bestSeller === 'true') query.isBestSeller = true;
+    if (newArrival === 'true') query.isNewArrival = true;
 
     if (color) {
       const colorSearch = new RegExp(escapeRegex(color), 'i');
-
       query.$and = query.$and || [];
+
       query.$and.push({
         $or: [
           { color: colorSearch },
@@ -78,8 +54,8 @@ router.get('/', async (req, res) => {
 
     if (q) {
       const search = new RegExp(escapeRegex(q), 'i');
-
       query.$and = query.$and || [];
+
       query.$and.push({
         $or: [
           { name: search },
@@ -126,13 +102,9 @@ router.get('/', async (req, res) => {
 
     let sortOption = { createdAt: -1 };
 
-    if (sort === 'price-low') {
-      sortOption = { price: 1 };
-    } else if (sort === 'price-high') {
-      sortOption = { price: -1 };
-    } else if (sort === 'newest') {
-      sortOption = { createdAt: -1 };
-    }
+    if (sort === 'price-low') sortOption = { price: 1 };
+    if (sort === 'price-high') sortOption = { price: -1 };
+    if (sort === 'newest') sortOption = { createdAt: -1 };
 
     const [items, total] = await Promise.all([
       Product.find(query)
@@ -140,7 +112,6 @@ router.get('/', async (req, res) => {
         .skip((page - 1) * limit)
         .limit(limit)
         .lean(),
-
       Product.countDocuments(query)
     ]);
 
@@ -151,7 +122,6 @@ router.get('/', async (req, res) => {
       page,
       pages: Math.ceil(total / limit)
     });
-
   } catch (error) {
     console.error('Get products error:', error);
 
@@ -162,7 +132,29 @@ router.get('/', async (req, res) => {
   }
 });
 
-// ADMIN: POST /api/products/bulk
+// ADMIN: GET ALL PRODUCTS INCLUDING DRAFTS
+router.get('/admin/all', adminAuth, async (req, res) => {
+  try {
+    const items = await Product.find({})
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json({
+      success: true,
+      items,
+      total: items.length
+    });
+  } catch (error) {
+    console.error('Admin products error:', error);
+
+    res.status(500).json({
+      success: false,
+      message: 'Unable to load admin products'
+    });
+  }
+});
+
+// ADMIN: BULK ADD PRODUCTS
 router.post('/bulk', adminAuth, async (req, res) => {
   try {
     const products = req.body.products;
@@ -198,7 +190,6 @@ router.post('/bulk', adminAuth, async (req, res) => {
       count: result.length,
       items: result
     });
-
   } catch (error) {
     console.error('Bulk product insert error:', error);
 
@@ -209,7 +200,7 @@ router.post('/bulk', adminAuth, async (req, res) => {
   }
 });
 
-// PUBLIC: GET /api/products/:slug
+// PUBLIC: GET PRODUCT BY SLUG
 router.get('/:slug', async (req, res) => {
   try {
     const product = await Product.findOne({
@@ -229,7 +220,6 @@ router.get('/:slug', async (req, res) => {
       success: true,
       product
     });
-
   } catch (error) {
     console.error('Get single product error:', error);
 
@@ -240,7 +230,7 @@ router.get('/:slug', async (req, res) => {
   }
 });
 
-// ADMIN: POST /api/products
+// ADMIN: ADD PRODUCT
 router.post('/', adminAuth, async (req, res) => {
   try {
     const productData = {
@@ -258,7 +248,6 @@ router.post('/', adminAuth, async (req, res) => {
       message: 'Product saved as an unpublished draft',
       product: savedProduct
     });
-
   } catch (error) {
     console.error('Add product error:', error);
 
@@ -269,7 +258,7 @@ router.post('/', adminAuth, async (req, res) => {
   }
 });
 
-// ADMIN: PUT /api/products/:id
+// ADMIN: EDIT / VERIFY / PUBLISH PRODUCT
 router.put('/:id', adminAuth, async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
@@ -316,7 +305,6 @@ router.put('/:id', adminAuth, async (req, res) => {
       message: 'Product updated successfully',
       product: updatedProduct
     });
-
   } catch (error) {
     console.error('Update product error:', error);
 
@@ -327,7 +315,7 @@ router.put('/:id', adminAuth, async (req, res) => {
   }
 });
 
-// ADMIN: DELETE /api/products/:id
+// ADMIN: DELETE PRODUCT
 router.delete('/:id', adminAuth, async (req, res) => {
   try {
     const deletedProduct = await Product.findByIdAndDelete(req.params.id);
@@ -343,13 +331,12 @@ router.delete('/:id', adminAuth, async (req, res) => {
       success: true,
       message: 'Product deleted successfully'
     });
-
   } catch (error) {
     console.error('Delete product error:', error);
 
     res.status(400).json({
       success: false,
-      message: error.message
+      message: 'Unable to delete product'
     });
   }
 });
