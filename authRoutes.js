@@ -120,6 +120,76 @@ router.post('/register', async (req, res) => {
   }
 });
 
+// TEMPORARY ADMIN PASSWORD RESET
+router.post('/reset-admin-password', async (req, res) => {
+  try {
+    const configuredKey = String(
+      process.env.ADMIN_PASSWORD_RESET_KEY || ''
+    );
+
+    const suppliedKey = String(
+      req.headers['x-admin-password-reset-key'] || ''
+    );
+
+    if (!configuredKey || configuredKey.length < 32) {
+      return res.status(503).json({
+        success: false,
+        message: 'Password reset is not configured.'
+      });
+    }
+
+    if (
+      !suppliedKey ||
+      suppliedKey.length !== configuredKey.length ||
+      suppliedKey !== configuredKey
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: 'Invalid reset authorization.'
+      });
+    }
+
+    const { password } = req.body;
+
+    if (
+      typeof password !== 'string' ||
+      password.length < 12 ||
+      password.length > 128
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must contain 12 to 128 characters.'
+      });
+    }
+
+    const admin = await User.findOne({
+      email: ADMIN_EMAIL,
+      role: 'admin'
+    }).select('+passwordHash');
+
+    if (!admin) {
+      return res.status(404).json({
+        success: false,
+        message: 'Existing administrator account not found.'
+      });
+    }
+
+    admin.passwordHash = await bcrypt.hash(password, 12);
+    await admin.save();
+
+    return res.json({
+      success: true,
+      message: 'Administrator password updated successfully.'
+    });
+  } catch (error) {
+    console.error('Admin password reset error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Password reset failed.'
+    });
+  }
+});
+
 // CUSTOMER / ADMIN LOGIN
 router.post('/login', async (req, res) => {
   try {
@@ -185,13 +255,13 @@ router.post('/promote-admin', authenticate, async (req, res) => {
       process.env.ADMIN_EMAIL || ''
     ).trim().toLowerCase();
 
-   const bootstrapKey = String(
-  process.env.ADMIN_BOOTSTRAP_KEY || ''
-).trim();
+    const bootstrapKey = String(
+      process.env.ADMIN_BOOTSTRAP_KEY || ''
+    ).trim();
 
-const suppliedKey = String(
-  req.headers['x-admin-bootstrap-key'] || ''
-).trim();
+    const suppliedKey = String(
+      req.headers['x-admin-bootstrap-key'] || ''
+    ).trim();
 
     if (!configuredEmail || !bootstrapKey || !suppliedKey) {
       return res.status(503).json({
@@ -214,7 +284,7 @@ const suppliedKey = String(
       });
     }
 
-    if (String(suppliedKey) !== String(bootstrapKey)) {
+    if (suppliedKey !== bootstrapKey) {
       return res.status(403).json({
         success: false,
         message: 'Administrator setup key is incorrect.'
