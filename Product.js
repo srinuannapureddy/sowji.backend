@@ -126,10 +126,39 @@ const productSchema = new mongoose.Schema(
     },
 
     fabric: {
-      type: String,
-      default: '',
-      trim: true
-    },
+  type: String,
+  default: '',
+  trim: true
+},
+
+weaveType: {
+  type: String,
+  default: '',
+  trim: true
+},
+
+blousePiece: {
+  type: String,
+  default: '',
+  trim: true
+},
+
+blouseIncluded: {
+  type: Boolean,
+  default: false
+},
+
+occasion: {
+  type: String,
+  default: '',
+  trim: true
+},
+
+careInstructions: {
+  type: String,
+  default: '',
+  trim: true
+},
 
     isVerified: {
       type: Boolean,
