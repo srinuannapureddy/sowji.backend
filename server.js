@@ -30,15 +30,23 @@ app.use(cors({
   allowedHeaders: [
     'Content-Type',
     'Authorization',
-    'x-admin-bootstrap-key'
+    'x-admin-bootstrap-key',
+    'x-admin-password-reset-key'
   ],
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
+  methods: [
+    'GET',
+    'POST',
+    'PUT',
+    'PATCH',
+    'DELETE',
+    'OPTIONS'
+  ]
 }));
 
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// API routes
+// API ROUTES
 app.use('/api/products', require('./productRoutes'));
 app.use('/api/categories', require('./categoryRoutes'));
 app.use('/api/auth', require('./authRoutes'));
@@ -47,7 +55,7 @@ app.use('/api/reviews', require('./reviewRoutes'));
 app.use('/api/uploads', require('./uploadRoutes'));
 app.use('/api/customer-data', require('./customerDataRoutes'));
 
-// Health check
+// HEALTH CHECK
 app.get('/', (req, res) => {
   res.json({
     success: true,
@@ -58,7 +66,7 @@ app.get('/', (req, res) => {
   });
 });
 
-// Error handler
+// ERROR HANDLER
 app.use((err, req, res, next) => {
   console.error('Server error:', err.message);
 
@@ -68,7 +76,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Database connection and server start
+// DATABASE CONNECTION AND SERVER START
 const PORT = process.env.PORT || 5000;
 
 mongoose.connect(process.env.MONGO_URI)
