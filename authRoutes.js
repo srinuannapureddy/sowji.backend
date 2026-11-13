@@ -6,7 +6,7 @@ const User = require('./User');
 
 const router = express.Router();
 
-const ADMIN_EMAIL = 'akshathacgowda.75@gmail.com';
+const ADMIN_EMAIL = 'akshathacgowda75@gmail.com';
 
 function makeToken(user) {
   return jwt.sign(
