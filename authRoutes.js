@@ -185,8 +185,13 @@ router.post('/promote-admin', authenticate, async (req, res) => {
       process.env.ADMIN_EMAIL || ''
     ).trim().toLowerCase();
 
-    const bootstrapKey = process.env.ADMIN_BOOTSTRAP_KEY;
-    const suppliedKey = req.headers['x-admin-bootstrap-key'];
+   const bootstrapKey = String(
+  process.env.ADMIN_BOOTSTRAP_KEY || ''
+).trim();
+
+const suppliedKey = String(
+  req.headers['x-admin-bootstrap-key'] || ''
+).trim();
 
     if (!configuredEmail || !bootstrapKey || !suppliedKey) {
       return res.status(503).json({
