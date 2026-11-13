@@ -6,13 +6,14 @@ const User = require('./User');
 
 const router = express.Router();
 
-function makeToken(user) {
-  if (!process.env.JWT_SECRET) {
-    throw new Error('JWT_SECRET is missing');
-  }
+const ADMIN_EMAIL = 'akshathacgowda.75@gmail.com';
 
+function makeToken(user) {
   return jwt.sign(
-    { sub: user._id.toString(), role: 'customer' },
+    {
+      sub: user._id.toString(),
+      role: user.role
+    },
     process.env.JWT_SECRET,
     { expiresIn: '7d' }
   );
@@ -28,82 +29,126 @@ function safeUser(user) {
   };
 }
 
+async function authenticate(req, res, next) {
+  try {
+    const header = req.headers.authorization || '';
+    const token = header.startsWith('Bearer ')
+      ? header.slice(7)
+      : '';
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'Please log in first.'
+      });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.sub);
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Account not found.'
+      });
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid or expired login. Please log in again.'
+    });
+  }
+}
+
+// CUSTOMER REGISTRATION
 router.post('/register', async (req, res) => {
   try {
-    const name = String(req.body.name || '').trim();
-    const email = String(req.body.email || '').trim().toLowerCase();
-    const phone = String(req.body.phone || '').replace(/[\s()-]/g, '');
-    const password = String(req.body.password || '');
+    const { name, email, phone, password } = req.body;
 
     if (!name || !email || !phone || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Please complete all fields.'
+        message: 'Please fill in all required fields.'
       });
     }
 
-    if (name.length > 80 ||
-        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
-        !/^\+?[0-9]{10,15}$/.test(phone) ||
-        password.length < 8 ||
-        password.length > 72) {
+    if (String(password).length < 8) {
       return res.status(400).json({
         success: false,
-        message: 'Check your name, email, phone and password. Password must be 8–72 characters.'
+        message: 'Password must contain at least 8 characters.'
       });
     }
 
-    const existing = await User.findOne({ email });
+    const normalizedEmail = String(email).trim().toLowerCase();
+
+    const existing = await User.findOne({
+      email: normalizedEmail
+    });
 
     if (existing) {
       return res.status(409).json({
         success: false,
-        message: 'This email is already registered. Please log in.'
+        message: 'An account with this email already exists.'
       });
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
 
     const user = await User.create({
-      name,
-      email,
-      phone,
+      name: String(name).trim(),
+      email: normalizedEmail,
+      phone: String(phone).trim(),
       passwordHash,
       role: 'customer'
     });
 
     return res.status(201).json({
       success: true,
-      message: 'Your account has been created successfully.',
+      message: 'Account created successfully.',
       token: makeToken(user),
       user: safeUser(user)
     });
   } catch (error) {
-    console.error('Registration error:', error.message);
-
-    if (error.code === 11000) {
-      return res.status(409).json({
-        success: false,
-        message: 'This email is already registered.'
-      });
-    }
-
+    console.error('Registration error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Registration failed. Please try again.'
+      message: 'Registration failed.'
     });
   }
 });
 
+// CUSTOMER / ADMIN LOGIN
 router.post('/login', async (req, res) => {
   try {
-    const email = String(req.body.email || '').trim().toLowerCase();
-    const password = String(req.body.password || '');
+    const { email, password } = req.body;
 
-    const user = await User.findOne({ email })
-      .select('+passwordHash');
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and password are required.'
+      });
+    }
 
-    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+    const user = await User.findOne({
+      email: String(email).trim().toLowerCase()
+    }).select('+passwordHash');
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password.'
+      });
+    }
+
+    const validPassword = await bcrypt.compare(
+      password,
+      user.passwordHash
+    );
+
+    if (!validPassword) {
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password.'
@@ -117,47 +162,86 @@ router.post('/login', async (req, res) => {
       user: safeUser(user)
     });
   } catch (error) {
-    console.error('Login error:', error.message);
-
+    console.error('Login error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Login failed. Please try again.'
+      message: 'Login failed.'
     });
   }
 });
 
-router.get('/me', async (req, res) => {
+// CURRENT LOGGED-IN USER
+router.get('/me', authenticate, (req, res) => {
+  return res.json({
+    success: true,
+    user: safeUser(req.user)
+  });
+});
+
+// ONE-TIME ADMIN PROMOTION
+router.post('/promote-admin', authenticate, async (req, res) => {
   try {
-    const header = req.headers.authorization || '';
-    const token = header.startsWith('Bearer ')
-      ? header.slice(7)
-      : '';
+    const configuredEmail = String(
+      process.env.ADMIN_EMAIL || ''
+    ).trim().toLowerCase();
 
-    if (!token) {
-      return res.status(401).json({
+    const bootstrapKey = process.env.ADMIN_BOOTSTRAP_KEY;
+    const suppliedKey = req.headers['x-admin-bootstrap-key'];
+
+    if (!configuredEmail || !bootstrapKey || !suppliedKey) {
+      return res.status(503).json({
         success: false,
-        message: 'Please log in.'
+        message: 'Administrator setup is not configured.'
       });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.sub);
-
-    if (!user) {
-      return res.status(404).json({
+    if (configuredEmail !== ADMIN_EMAIL) {
+      return res.status(403).json({
         success: false,
-        message: 'Account not found.'
+        message: 'Administrator email configuration is invalid.'
       });
     }
+
+    if (String(req.user.email).toLowerCase() !== ADMIN_EMAIL) {
+      return res.status(403).json({
+        success: false,
+        message: 'This account is not authorised to become administrator.'
+      });
+    }
+
+    if (String(suppliedKey) !== String(bootstrapKey)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Administrator setup key is incorrect.'
+      });
+    }
+
+    const existingAdmin = await User.findOne({
+      role: 'admin',
+      _id: { $ne: req.user._id }
+    });
+
+    if (existingAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'An administrator has already been configured.'
+      });
+    }
+
+    req.user.role = 'admin';
+    await req.user.save();
 
     return res.json({
       success: true,
-      user: safeUser(user)
+      message: 'Administrator account activated.',
+      token: makeToken(req.user),
+      user: safeUser(req.user)
     });
   } catch (error) {
-    return res.status(401).json({
+    console.error('Admin promotion error:', error);
+    return res.status(500).json({
       success: false,
-      message: 'Session expired. Please log in again.'
+      message: 'Administrator setup failed.'
     });
   }
 });
